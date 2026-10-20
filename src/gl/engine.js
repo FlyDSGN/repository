@@ -1,11 +1,15 @@
-import { WebGLRenderer } from 'three';
+import { NeutralToneMapping, WebGLRenderer } from 'three';
 
 const PIXEL_BUDGET = [1.4e6, 1.4e6, 2.2e6, 3e6];
 
 const SOFTWARE_GPU = /swiftshader|llvmpipe|softpipe|software|basic render/i;
 const LOW_GPU = /swiftshader|llvmpipe|softpipe|software|basic render|mali-[2-4]\d\d|mali-t[6-8]|adreno \(tm\) [2-5]\d\d|powervr|intel.*(gma|hd graphics [2-5]\d{2,3}\b)/i;
 
+const FORCE = new URLSearchParams(location.search).get('quality');
+
 export function detectTier() {
+  if (FORCE === 'high') return 3;
+  if (FORCE === 'low') return 1;
   const cores = navigator.hardwareConcurrency || 4;
   const mem = navigator.deviceMemory || 4;
   const mobile = /android|iphone|ipad|mobile/i.test(navigator.userAgent);
@@ -182,6 +186,8 @@ export class Engine {
   makeRenderer() {
     const renderer = new WebGLRenderer({ antialias: this.gov.aa, alpha: true, stencil: false, powerPreference: 'default' });
     renderer.setClearColor(0x000000, 0);
+    renderer.toneMapping = NeutralToneMapping;
+    renderer.toneMappingExposure = 1.05;
     renderer.debug.checkShaderErrors = false;
     return renderer;
   }
@@ -196,8 +202,8 @@ export class Engine {
       const vp = gl.getParameter(gl.MAX_VIEWPORT_DIMS);
       this.maxDim = Math.min(4096, gl.getParameter(gl.MAX_RENDERBUFFER_SIZE), vp ? Math.min(vp[0], vp[1]) : 4096);
       const hadAA = this.gov.aa;
-      this.gov.software = SOFTWARE_GPU.test(this.gpu);
-      if (LOW_GPU.test(this.gpu) && this.gov.tier > 1) this.gov.setTier(1);
+      this.gov.software = SOFTWARE_GPU.test(this.gpu) && FORCE !== 'high';
+      if (LOW_GPU.test(this.gpu) && this.gov.tier > 1 && !FORCE) this.gov.setTier(1);
       else this.gov.setTier(this.gov.tier);
       if (hadAA !== this.gov.aa) {
         renderer.dispose();
@@ -286,7 +292,9 @@ export class Engine {
       if (!z.warmup) continue;
       await idle();
       const t0 = performance.now();
+      this.gov.warm(t0, 2000);
       try { await z.warmup(s.renderer); } catch (err) { console.warn('[3d] prewarm', err); }
+      this.gov.warm(performance.now(), 1500);
       this.note(`warm ${z.name} ${Math.round(performance.now() - t0)}ms t=${Math.round(performance.now())}`);
     }
     this.warmed = true;

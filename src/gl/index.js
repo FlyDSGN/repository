@@ -1,4 +1,4 @@
-import { BASE_MATCAPS, FINISHES, finishMatcaps, preloadMatcaps } from './assets.js';
+import { FINISHES } from './assets.js';
 import { detectTier, Engine } from './engine.js';
 import { createHero } from './hero.js';
 import { applyFinish } from './phone.js';
@@ -50,24 +50,21 @@ export async function boot() {
   engine.createSlot();
   const tier = engine.gov.tier;
   const finish = savedFinish();
-  const size = engine.gov.software ? 128 : tier >= 2 ? 256 : 192;
-  await Promise.all([fontsReady(), preloadMatcaps([...BASE_MATCAPS, ...finishMatcaps(finish)], size)]);
+  const rich = tier >= 2 && !engine.gov.software;
+  await fontsReady();
 
-  const hero = createHero({ el: heroEl, stage: document.getElementById('stage'), tier, finish });
+  const hero = createHero({ el: heroEl, stage: document.getElementById('stage'), tier, finish, rich });
   const heroReady = hero.onReady;
   hero.onReady = () => {
     heroReady();
-    setTimeout(() => {
-      engine.prewarm();
-      preloadMatcaps(FINISHES.flatMap((f) => finishMatcaps(f.id)));
-    }, 400);
+    setTimeout(() => engine.prewarm(), 400);
   };
   engine.add(hero);
-  const show = showEl ? createShowcase({ el: showEl, sticky: document.getElementById('feat-sticky'), tier, finish }) : null;
+  const show = showEl ? createShowcase({ el: showEl, sticky: document.getElementById('feat-sticky'), tier, finish, rich }) : null;
   if (show) engine.add(show);
 
-  setupPicker(async (id) => {
-    await applyFinish(id);
+  setupPicker((id) => {
+    applyFinish(id);
     hero.showBack();
     if (show) show.dirty = true;
     engine.wake();

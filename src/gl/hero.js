@@ -1,14 +1,14 @@
 import { Group, Mesh, MeshBasicMaterial, PerspectiveCamera, PlaneGeometry, Raycaster, Scene, Vector2 } from 'three';
 import { clamp01, damp, easeInOut, easeOutCubic, warmScene } from './assets.js';
-import { buildPhone, glareMesh, px, py, screenMesh, Z_SCREEN } from './phone.js';
+import { buildPhone, px, py, screenMesh, studioEnv, Z_SCREEN } from './phone.js';
 import { layoutMessages, paintBubble, paintChat } from './screens.js';
 
 const LOOP = 12;
 const REST_Y = -0.34;
 const T = Math.PI * 2;
 
-export function createHero({ el, stage, tier, finish }) {
-  const q = { finish, curve: tier >= 2 ? 10 : 6, texScale: tier >= 2 ? 2.5 : 2 };
+export function createHero({ el, stage, tier, finish, rich }) {
+  const q = { finish, rich, envSize: rich ? 256 : 128, curve: tier >= 2 ? 10 : 6, texScale: tier >= 2 ? 2.5 : 2 };
   const scene = new Scene();
   const camera = new PerspectiveCamera(26, 1, 2, 60);
   const root = new Group();
@@ -22,7 +22,7 @@ export function createHero({ el, stage, tier, finish }) {
 
   const plane = new PlaneGeometry(1, 1);
   const bubbles = layoutMessages().map((b) => {
-    const mesh = new Mesh(plane, new MeshBasicMaterial({ map: paintBubble(b.msg, b.size, q.texScale + 0.5), transparent: true, depthWrite: false, opacity: 0 }));
+    const mesh = new Mesh(plane, new MeshBasicMaterial({ map: paintBubble(b.msg, b.size, q.texScale + 0.5), transparent: true, depthWrite: false, opacity: 0, toneMapped: false }));
     const sx = b.size.w / 100;
     const sy = b.size.h / 100;
     mesh.position.set(px(b.x + b.size.w / 2), py(b.y + b.size.h / 2), Z_SCREEN + 0.004);
@@ -33,8 +33,6 @@ export function createHero({ el, stage, tier, finish }) {
     return { mesh, sx, sy, base: mesh.position.y };
   });
 
-  const glare = glareMesh(phone.screenGeo);
-  phone.group.add(glare);
 
   const st = {
     tx: 0, ty: 0, drag: false, dragX: 0, downX: 0, downY: 0, downT: 0,
@@ -92,7 +90,7 @@ export function createHero({ el, stage, tier, finish }) {
     el,
     priority: 2,
     time: 0,
-    warmup: (r) => warmScene(r, scene, camera),
+    warmup: (r) => { scene.environment = studioEnv(r, q.envSize); return warmScene(r, scene, camera); },
     onReady() {
       el.classList.add('is-ready');
       stage.classList.add('gl-on');
@@ -149,7 +147,6 @@ export function createHero({ el, stage, tier, finish }) {
       rig.rotation.y = damp(rig.rotation.y, REST_Y + st.tx * 0.32 + sway + st.rotY + flip - (1 - ie) * 0.5, lam, dt);
       rig.rotation.x = damp(rig.rotation.x, 0.05 + st.ty * 0.14 + scroll * 0.2, lam, dt);
       rig.position.y = live ? Math.sin(t * 0.8) * 0.05 : 0;
-      glare.userData.update(rig.rotation.y, st.ty);
 
       const ct = live ? (t - st.intro) % LOOP : 8;
       const out = live ? clamp01((ct - (LOOP - 1)) / 0.45) : 0;
@@ -168,6 +165,7 @@ export function createHero({ el, stage, tier, finish }) {
       renderer.setScissorTest(false);
       renderer.autoClear = true;
       renderer.setViewport(0, 0, zone.cssW, zone.cssH);
+      scene.environment = studioEnv(renderer, q.envSize);
       renderer.render(scene, camera);
     },
   };

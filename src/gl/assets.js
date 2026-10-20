@@ -1,16 +1,10 @@
 import {
   CanvasTexture,
-  DataTexture,
   ExtrudeGeometry,
-  LinearFilter,
-  LinearMipmapLinearFilter,
-  MeshMatcapMaterial,
-  RGBAFormat,
   Shape,
   SRGBColorSpace,
-  UnsignedByteType,
 } from 'three';
-import { renderMatcap } from './matcap-core.js';
+import { mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
 
 export const clamp01 = (v) => (v < 0 ? 0 : v > 1 ? 1 : v);
 export const easeOutCubic = (t) => 1 - (1 - t) ** 3;
@@ -32,91 +26,11 @@ export function toTexture(canvas) {
 }
 
 export const FINISHES = [
-  { id: 'glacier-blue', label: 'Glacier Blue', css: '#a9c3d8', base: '#a3bfd6', back: '#a9c2d6' },
-  { id: 'burgundy', label: 'Burgundy', css: '#5b1e2a', base: '#4c1623', back: '#5a1e2b' },
-  { id: 'silver', label: 'Silver', css: '#d6d9de', base: '#cfd3da', back: '#d3d7dd' },
-  { id: 'deep-black', label: 'Deep Black', css: '#2b2c31', base: '#2c2d33', back: '#36373d' },
+  { id: 'glacier-blue', label: 'Glacier Blue', frame: '#9db6cb', back: '#839cb1' },
+  { id: 'burgundy', label: 'Burgundy', frame: '#4f1a26', back: '#461722' },
+  { id: 'silver', label: 'Silver', frame: '#cfd2d8', back: '#bfc2c8' },
+  { id: 'deep-black', label: 'Deep Black', frame: '#2b2c31', back: '#28292e' },
 ];
-
-const BASE_PRESETS = {
-  ink: { base: '#040507', f0: 0.06, rough: 0.04, spec: 2.2, ambient: 0.1 },
-  lens: { base: '#22276a', metal: 1, rough: 0.05, spec: 1.1 },
-};
-
-function finishPresets(f) {
-  return {
-    [`${f.id}:frame`]: { base: f.base, metal: 1, rough: 0.26, spec: 1 },
-    [`${f.id}:ring`]: { base: f.base, metal: 1, rough: 0.12, spec: 1.1 },
-    [`${f.id}:back`]: { base: f.back, f0: 0.05, rough: 0.7, spec: 0.7, ambient: 0.26 },
-  };
-}
-
-const PRESETS = Object.assign({}, BASE_PRESETS, ...FINISHES.map(finishPresets));
-const matcapCache = new Map();
-let matcapSize = 256;
-
-function toMatcapTexture(data, size) {
-  const tex = new DataTexture(data, size, size, RGBAFormat, UnsignedByteType);
-  tex.colorSpace = SRGBColorSpace;
-  tex.magFilter = LinearFilter;
-  tex.minFilter = LinearMipmapLinearFilter;
-  tex.generateMipmaps = true;
-  tex.needsUpdate = true;
-  return tex;
-}
-
-let worker = null;
-let jobId = 0;
-const pending = new Map();
-
-function getWorker() {
-  if (worker !== null) return worker;
-  try {
-    worker = new Worker(new URL('./matcap.worker.js', import.meta.url), { type: 'module' });
-    worker.onmessage = (e) => {
-      const done = pending.get(e.data.id);
-      pending.delete(e.data.id);
-      done?.(e.data.result);
-    };
-    worker.onerror = () => { worker = false; };
-  } catch {
-    worker = false;
-  }
-  return worker;
-}
-
-export async function preloadMatcaps(names, size = matcapSize) {
-  matcapSize = size;
-  const todo = names.filter((n) => !matcapCache.has(n) && PRESETS[n]);
-  if (!todo.length) return;
-  const jobs = todo.map((name) => ({ ...PRESETS[name], name, size }));
-  const w = getWorker();
-  let result;
-  if (w) {
-    const id = ++jobId;
-    result = await Promise.race([
-      new Promise((resolve) => { pending.set(id, resolve); w.postMessage({ id, jobs }); }),
-      new Promise((resolve) => setTimeout(() => resolve(null), 6000)),
-    ]);
-  }
-  if (!result) result = jobs.map((j) => ({ name: j.name, size: j.size, data: renderMatcap({ ...j, size: Math.min(j.size, 128) }) }));
-  for (const r of result) {
-    const s = Math.round(Math.sqrt(r.data.length / 4));
-    if (!matcapCache.has(r.name)) matcapCache.set(r.name, toMatcapTexture(r.data, s));
-  }
-}
-
-export const finishMatcaps = (id) => [`${id}:frame`, `${id}:ring`, `${id}:back`];
-export const BASE_MATCAPS = Object.keys(BASE_PRESETS);
-
-export function matcap(name) {
-  if (!matcapCache.has(name)) matcapCache.set(name, toMatcapTexture(renderMatcap({ ...PRESETS[name], size: 128 }), 128));
-  return matcapCache.get(name);
-}
-
-export function matcapMaterial(name, extra = {}) {
-  return new MeshMatcapMaterial({ matcap: matcap(name), ...extra });
-}
 
 export function roundedRect(w, h, r, rb = r) {
   const s = new Shape();
@@ -134,8 +48,8 @@ export function roundedRect(w, h, r, rb = r) {
   return s;
 }
 
-export function extrude(shape, { depth = 0.2, bevel = 0.05, segments = 3, curve = 10 } = {}) {
-  const g = new ExtrudeGeometry(shape, {
+export function extrude(shape, { depth = 0.2, bevel = 0.05, segments = 3, curve = 10, smooth = false } = {}) {
+  let g = new ExtrudeGeometry(shape, {
     depth,
     bevelEnabled: bevel > 0,
     bevelThickness: bevel,
@@ -144,6 +58,11 @@ export function extrude(shape, { depth = 0.2, bevel = 0.05, segments = 3, curve 
     curveSegments: curve,
   });
   g.center();
+  if (smooth) {
+    g.deleteAttribute('uv');
+    g = mergeVertices(g, 1e-4);
+    g.computeVertexNormals();
+  }
   g.computeBoundingSphere();
   return g;
 }
@@ -171,9 +90,7 @@ export function roundRectPath(ctx, x, y, w, h, r) {
 export async function warmScene(renderer, scene, camera) {
   scene.traverse((o) => {
     const m = o.material;
-    if (!m) return;
-    if (m.map) renderer.initTexture(m.map);
-    if (m.matcap) renderer.initTexture(m.matcap);
+    if (m?.map) renderer.initTexture(m.map);
   });
   await renderer.compileAsync(scene, camera);
   const hidden = [];
@@ -187,10 +104,4 @@ export async function warmScene(renderer, scene, camera) {
   renderer.setScissorTest(false);
   renderer.autoClear = autoClear;
   for (const o of hidden) o.visible = false;
-}
-
-export function isDarkTheme() {
-  const t = document.documentElement.getAttribute('data-theme');
-  if (t) return t === 'dark';
-  return matchMedia('(prefers-color-scheme: dark)').matches;
 }

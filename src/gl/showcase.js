@@ -1,12 +1,12 @@
 import { Group, PerspectiveCamera, Scene } from 'three';
 import { clamp01, damp, easeInOut, warmScene } from './assets.js';
-import { buildPhone, glareMesh, screenMesh, Z_SCREEN } from './phone.js';
+import { buildPhone, screenMesh, studioEnv, Z_SCREEN } from './phone.js';
 import { SCREENS } from './screens.js';
 
 const REST_Y = 0.3;
 
-export function createShowcase({ el, sticky, tier, finish }) {
-  const q = { finish, curve: tier >= 2 ? 10 : 6, texScale: tier >= 2 ? 2 : 1.5 };
+export function createShowcase({ el, sticky, tier, finish, rich }) {
+  const q = { finish, rich, envSize: rich ? 256 : 128, curve: tier >= 2 ? 10 : 6, texScale: tier >= 2 ? 2 : 1.5 };
   const scene = new Scene();
   const camera = new PerspectiveCamera(26, 1, 2, 60);
   const root = new Group();
@@ -31,8 +31,6 @@ export function createShowcase({ el, sticky, tier, finish }) {
   next.visible = false;
   next.renderOrder = 2;
   phone.group.add(front, next);
-  const glare = glareMesh(phone.screenGeo);
-  phone.group.add(glare);
 
   const idle = window.requestIdleCallback || ((f) => setTimeout(f, 120));
   const paintRest = (i = 1) => {
@@ -74,6 +72,7 @@ export function createShowcase({ el, sticky, tier, finish }) {
     priority: 1,
     time: 0,
     warmup: async (r) => {
+      scene.environment = studioEnv(r, q.envSize);
       await warmScene(r, scene, camera);
       for (const t of tex) if (t) r.initTexture(t);
     },
@@ -103,12 +102,12 @@ export function createShowcase({ el, sticky, tier, finish }) {
       rig.rotation.y = damp(rig.rotation.y, REST_Y + st.tx * 0.3 + sway - turn, lam, dt);
       rig.rotation.x = damp(rig.rotation.x, 0.05 + st.ty * 0.12, lam, dt);
       rig.position.y = live ? Math.sin(t * 0.8 + 2) * 0.05 : 0;
-      glare.userData.update(rig.rotation.y, st.ty);
     },
     render(renderer) {
       renderer.setScissorTest(false);
       renderer.autoClear = true;
       renderer.setViewport(0, 0, zone.cssW, zone.cssH);
+      scene.environment = studioEnv(renderer, q.envSize);
       renderer.render(scene, camera);
     },
   };
