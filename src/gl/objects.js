@@ -1,7 +1,9 @@
 import {
   BufferGeometry,
   CapsuleGeometry,
+  CatmullRomCurve3,
   ConeGeometry,
+  ExtrudeGeometry,
   Float32BufferAttribute,
   Group,
   InstancedMesh,
@@ -9,20 +11,24 @@ import {
   LineLoop,
   Mesh,
   Object3D,
-  PlaneGeometry,
   Points,
   PointsMaterial,
   Shape,
   SphereGeometry,
   TorusGeometry,
+  TubeGeometry,
+  Vector2,
+  Vector3,
 } from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
+import { SVGLoader } from 'three/addons/loaders/SVGLoader.js';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import {
   bubbleShape,
   matcap,
   dotTexture,
   extrude,
-  iconMaterial,
+  ICONS,
   matcapMaterial,
   planeGeometry,
   planeMaterial,
@@ -44,23 +50,78 @@ export function applyTheme(dark) {
 
 export const TILE_FRONT = 0.19;
 const tileGeo = (curve) => once(`tile${curve}`, () => extrude(roundedRect(0.86, 0.86, 0.26), { depth: 0.24, bevel: 0.07, segments: 3, curve }));
-const iconPlane = () => once('iconPlane', () => new PlaneGeometry(0.64, 0.64));
+
+function densify(pts, step) {
+  const out = [pts[0]];
+  for (let i = 1; i < pts.length; i++) {
+    const a = pts[i - 1];
+    const b = pts[i];
+    const n = Math.max(1, Math.ceil(a.distanceTo(b) / step));
+    for (let k = 1; k <= n; k++) out.push(new Vector2().lerpVectors(a, b, k / n));
+  }
+  return out;
+}
+
+export function iconGeometry(name, q, size = 0.6, width = 2) {
+  return once(`icon3d:${name}:${size}:${q.curve}`, () => {
+    const icon = ICONS[name];
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">${icon.d.map((d) => `<path d="${d}"/>`).join('')}</svg>`;
+    const { paths } = new SVGLoader().parse(svg);
+    const k = size / 24;
+    const r = (width / 2) * 1.15;
+    const radial = q.curve >= 8 ? 10 : 7;
+    const parts = [];
+    const v3 = (p) => new Vector3(p.x - 12, 12 - p.y, 0);
+    for (const path of paths) {
+      if (icon.fill) {
+        for (const shape of SVGLoader.createShapes(path)) {
+          const flipped = new Shape(shape.getPoints(4).map((p) => new Vector2(p.x - 12, 12 - p.y)));
+          parts.push(new ExtrudeGeometry(flipped, { depth: 0.9, bevelEnabled: true, bevelThickness: 0.45, bevelSize: 0.35, bevelSegments: 3, curveSegments: 4 }));
+        }
+        continue;
+      }
+      for (const sub of path.subPaths) {
+        const raw = sub.getPoints(8);
+        const pts = [];
+        for (const p of raw) if (!pts.length || pts[pts.length - 1].distanceTo(p) > 0.05) pts.push(p);
+        let len = 0;
+        for (let i = 1; i < pts.length; i++) len += pts[i].distanceTo(pts[i - 1]);
+        if (pts.length < 2 || len < 0.3) {
+          parts.push(new SphereGeometry(r * 1.2, radial, radial - 2).translate(pts[0].x - 12, 12 - pts[0].y, 0));
+          continue;
+        }
+        const closed = pts.length > 2 && pts[0].distanceTo(pts[pts.length - 1]) < 0.3;
+        if (closed) pts.pop();
+        const dense = densify(closed ? [...pts, pts[0]] : pts, 0.55);
+        if (closed) dense.pop();
+        const curve = new CatmullRomCurve3(dense.map(v3), closed, 'centripetal');
+        parts.push(new TubeGeometry(curve, Math.max(8, Math.round(len * 2.2)), r, radial, closed));
+        if (!closed) {
+          for (const p of [pts[0], pts[pts.length - 1]]) parts.push(new SphereGeometry(r, radial, radial - 2).translate(p.x - 12, 12 - p.y, 0));
+        }
+      }
+    }
+    const geo = mergeGeometries(parts);
+    geo.scale(k, k, k);
+    geo.computeBoundingSphere();
+    return geo;
+  });
+}
 const mat = (name, extra) => once(`m:${name}`, () => matcapMaterial(name, extra));
 
 const OS = {
-  windows: { mc: 'blue', icon: '#ffffff' },
-  android: { mc: 'green', icon: '#ffffff' },
-  huawei: { mc: 'red', icon: '#ffffff' },
-  ios: { mc: 'silver', icon: '#262b44' },
+  windows: { mc: 'blue', icon: 'white' },
+  android: { mc: 'green', icon: 'white' },
+  huawei: { mc: 'red', icon: 'white' },
+  ios: { mc: 'silver', icon: 'ink' },
 };
 
 export function makeTile(os, q) {
   const cfg = OS[os];
   const g = new Group();
   const body = new Mesh(tileGeo(q.curve), mat(cfg.mc));
-  const icon = new Mesh(iconPlane(), once(`icon:${os}`, () => iconMaterial(os, { color: cfg.icon, width: os === 'windows' ? 0 : 2.1 })));
-  icon.position.z = TILE_FRONT + 0.004;
-  icon.renderOrder = 2;
+  const icon = new Mesh(iconGeometry(os, q), once(`icon:${cfg.icon}`, () => matcapMaterial(cfg.icon)));
+  icon.position.z = TILE_FRONT + 0.012;
   g.add(body, icon);
   g.userData.hit = body;
   return g;

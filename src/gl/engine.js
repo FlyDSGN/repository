@@ -44,7 +44,7 @@ class Governor {
   setTier(tier) {
     this.tier = tier;
     const dpr = window.devicePixelRatio || 1;
-    this.cap = tier >= 3 ? 2 : tier === 2 ? 1.5 : 1;
+    this.cap = this.software ? 1 : tier >= 2 ? 2 : 1.5;
     this.base = Math.min(dpr, this.cap);
     this.aa = !this.software && this.base < 2;
     if (tier <= 1) this.div = Math.max(this.div || 1, 2);

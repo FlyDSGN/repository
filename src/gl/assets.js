@@ -1,14 +1,19 @@
 import {
   CanvasTexture,
+  DataTexture,
   DoubleSide,
   ExtrudeGeometry,
   BufferGeometry,
   Float32BufferAttribute,
-  MeshBasicMaterial,
+  LinearFilter,
+  LinearMipmapLinearFilter,
   MeshMatcapMaterial,
+  RGBAFormat,
   Shape,
   SRGBColorSpace,
+  UnsignedByteType,
 } from 'three';
+import { renderMatcap } from './matcap-core.js';
 
 export const clamp01 = (v) => (v < 0 ? 0 : v > 1 ? 1 : v);
 export const easeOutCubic = (t) => 1 - (1 - t) ** 3;
@@ -30,81 +35,99 @@ function makeCanvas(w, h) {
 export function toTexture(canvas) {
   const tex = new CanvasTexture(canvas);
   tex.colorSpace = SRGBColorSpace;
-  tex.anisotropy = 2;
+  tex.anisotropy = 4;
   return tex;
 }
 
-const hex = (h) => {
-  const n = parseInt(h.slice(1), 16);
-  return [((n >> 16) & 255) / 255, ((n >> 8) & 255) / 255, (n & 255) / 255];
+export const FINISHES = [
+  { id: 'glacier-blue', label: 'Glacier Blue', css: '#a9c3d8', base: '#a3bfd6', back: '#a9c2d6' },
+  { id: 'burgundy', label: 'Burgundy', css: '#5b1e2a', base: '#4c1623', back: '#5a1e2b' },
+  { id: 'silver', label: 'Silver', css: '#d6d9de', base: '#cfd3da', back: '#d3d7dd' },
+  { id: 'deep-black', label: 'Deep Black', css: '#2b2c31', base: '#2c2d33', back: '#36373d' },
+];
+
+const BASE_PRESETS = {
+  violet: { base: '#7a5cff', f0: 0.1, rough: 0.18, spec: 1.3, ambient: 0.24 },
+  white: { base: '#e9ebf5', f0: 0.08, rough: 0.22, spec: 1.1, ambient: 0.3 },
+  lavender: { base: '#b6abf2', f0: 0.08, rough: 0.22, spec: 1.1, ambient: 0.28 },
+  blue: { base: '#2f8fff', f0: 0.1, rough: 0.18, spec: 1.3 },
+  green: { base: '#1fc46a', f0: 0.1, rough: 0.18, spec: 1.3 },
+  red: { base: '#ff3d61', f0: 0.1, rough: 0.18, spec: 1.3 },
+  silver: { base: '#c3c9dc', f0: 0.1, rough: 0.2, spec: 1.2, ambient: 0.26 },
+  amber: { base: '#ffae22', f0: 0.1, rough: 0.18, spec: 1.3 },
+  ink: { base: '#040507', f0: 0.07, rough: 0.04, spec: 2.4, ambient: 0.1 },
+  lens: { base: '#22276a', metal: 1, rough: 0.05, spec: 1.1 },
+  steel: { base: '#a2a8ba', metal: 1, rough: 0.18, spec: 1 },
 };
-const toLin = (c) => c ** 2.2;
-const toSrgb = (c) => Math.round(255 * Math.min(1, Math.max(0, c)) ** (1 / 2.2));
 
-function norm(x, y, z) {
-  const l = Math.hypot(x, y, z);
-  return [x / l, y / l, z / l];
+function finishPresets(f) {
+  return {
+    [`${f.id}:frame`]: { base: f.base, metal: 1, rough: 0.26, spec: 1 },
+    [`${f.id}:ring`]: { base: f.base, metal: 1, rough: 0.12, spec: 1.1 },
+    [`${f.id}:back`]: { base: f.back, f0: 0.05, rough: 0.7, spec: 0.7, ambient: 0.26 },
+  };
 }
 
-export function makeMatcap({ base, rim = '#8f7bff', fill = '#3b82ff', spec = 1, shine = 48, ambient = 0.22, rimK = 0.55, size = 128 }) {
-  const c = makeCanvas(size, size);
-  const ctx = c.getContext('2d');
-  const img = ctx.createImageData(size, size);
-  const b = hex(base).map(toLin);
-  const r = hex(rim).map(toLin);
-  const f = hex(fill).map(toLin);
-  const L1 = norm(-0.45, 0.62, 0.65);
-  const H1 = norm(L1[0], L1[1], L1[2] + 1);
-  const L2 = norm(0.7, -0.45, 0.4);
-  const S2 = norm(0.55, 0.75, 0.9);
-  const H2 = norm(S2[0], S2[1], S2[2] + 1);
-  let p = 0;
-  for (let py = 0; py < size; py++) {
-    for (let px = 0; px < size; px++) {
-      let nx = ((px + 0.5) / size) * 2 - 1;
-      let ny = 1 - ((py + 0.5) / size) * 2;
-      let d2 = nx * nx + ny * ny;
-      if (d2 > 0.999) {
-        const l = Math.sqrt(d2) / 0.9995;
-        nx /= l; ny /= l; d2 = nx * nx + ny * ny;
-      }
-      const nz = Math.sqrt(Math.max(0, 1 - d2));
-      const d1 = Math.max(0, nx * L1[0] + ny * L1[1] + nz * L1[2]);
-      const d2l = Math.max(0, nx * L2[0] + ny * L2[1] + nz * L2[2]);
-      const s1 = Math.max(0, nx * H1[0] + ny * H1[1] + nz * H1[2]) ** shine;
-      const s2 = Math.max(0, nx * H2[0] + ny * H2[1] + nz * H2[2]) ** (shine * 0.6);
-      const rimT = (1 - nz) ** 2.4;
-      for (let k = 0; k < 3; k++) {
-        const v = b[k] * (ambient + 0.9 * d1) + f[k] * 0.28 * d2l + r[k] * rimK * rimT + spec * (0.85 * s1 + 0.25 * s2);
-        img.data[p + k] = toSrgb(v);
-      }
-      img.data[p + 3] = 255;
-      p += 4;
-    }
-  }
-  ctx.putImageData(img, 0, 0);
-  return toTexture(c);
-}
-
+const PRESETS = Object.assign({}, BASE_PRESETS, ...FINISHES.map(finishPresets));
 const matcapCache = new Map();
-const PRESETS = {
-  graphite: { base: '#262a40', rim: '#6a58c9', fill: '#4b6bff', spec: 0.85, shine: 60, ambient: 0.3, rimK: 0.36 },
-  violet: { base: '#7a5cff', rim: '#d7ccff', fill: '#4f7dff', spec: 0.75, shine: 40 },
-  white: { base: '#e6e9f5', rim: '#b4a6ff', fill: '#8fa8ff', spec: 0.55, shine: 36, ambient: 0.35 },
-  lavender: { base: '#b8aef0', rim: '#ffffff', fill: '#6a4cf5', spec: 0.6, shine: 36, ambient: 0.3 },
-  blue: { base: '#2f8fff', rim: '#bfe0ff', fill: '#7a5cff', spec: 0.75, shine: 44 },
-  green: { base: '#22c46c', rim: '#c6ffe0', fill: '#3b82ff', spec: 0.7, shine: 44 },
-  red: { base: '#ff3f62', rim: '#ffc7d2', fill: '#7a5cff', spec: 0.7, shine: 44 },
-  silver: { base: '#b9c0d8', rim: '#ffffff', fill: '#7a5cff', spec: 0.8, shine: 50, ambient: 0.3 },
-  amber: { base: '#ffb02e', rim: '#fff0c9', fill: '#ff5f8a', spec: 0.7, shine: 40 },
-  steel: { base: '#8a90a8', rim: '#ffffff', fill: '#7a5cff', spec: 1, shine: 70, ambient: 0.32 },
-  lens: { base: '#0c1238', rim: '#5d6dff', fill: '#b05cff', spec: 1, shine: 90, ambient: 0.3, rimK: 0.85 },
-  satin: { base: '#2c3150', rim: '#5a54a8', fill: '#4b6bff', spec: 0.35, shine: 18, ambient: 0.34, rimK: 0.25 },
-  ink: { base: '#0b0c14', rim: '#3a3f60', fill: '#3b82ff', spec: 0.5, shine: 70, ambient: 0.4, rimK: 0.4 },
-};
+let matcapSize = 256;
+
+function toMatcapTexture(data, size) {
+  const tex = new DataTexture(data, size, size, RGBAFormat, UnsignedByteType);
+  tex.colorSpace = SRGBColorSpace;
+  tex.magFilter = LinearFilter;
+  tex.minFilter = LinearMipmapLinearFilter;
+  tex.generateMipmaps = true;
+  tex.needsUpdate = true;
+  return tex;
+}
+
+let worker = null;
+let jobId = 0;
+const pending = new Map();
+
+function getWorker() {
+  if (worker !== null) return worker;
+  try {
+    worker = new Worker(new URL('./matcap.worker.js', import.meta.url), { type: 'module' });
+    worker.onmessage = (e) => {
+      const done = pending.get(e.data.id);
+      pending.delete(e.data.id);
+      done?.(e.data.result);
+    };
+    worker.onerror = () => { worker = false; };
+  } catch {
+    worker = false;
+  }
+  return worker;
+}
+
+export async function preloadMatcaps(names, size = matcapSize) {
+  matcapSize = size;
+  const todo = names.filter((n) => !matcapCache.has(n) && PRESETS[n]);
+  if (!todo.length) return;
+  const jobs = todo.map((name) => ({ ...PRESETS[name], name, size }));
+  const w = getWorker();
+  let result;
+  if (w) {
+    const id = ++jobId;
+    result = await Promise.race([
+      new Promise((resolve) => { pending.set(id, resolve); w.postMessage({ id, jobs }); }),
+      new Promise((resolve) => setTimeout(() => resolve(null), 6000)),
+    ]);
+  }
+  if (!result) result = jobs.map((j) => ({ name: j.name, size: j.size, data: renderMatcap({ ...j, size: Math.min(j.size, 128) }) }));
+  for (const r of result) {
+    const s = Math.round(Math.sqrt(r.data.length / 4));
+    if (!matcapCache.has(r.name)) matcapCache.set(r.name, toMatcapTexture(r.data, s));
+  }
+}
+
+export const finishMatcaps = (id) => [`${id}:frame`, `${id}:ring`, `${id}:back`];
+export const BASE_MATCAPS = Object.keys(BASE_PRESETS);
 
 export function matcap(name) {
-  if (!matcapCache.has(name)) matcapCache.set(name, makeMatcap(PRESETS[name]));
+  if (!matcapCache.has(name)) matcapCache.set(name, toMatcapTexture(renderMatcap({ ...PRESETS[name], size: 128 }), 128));
   return matcapCache.get(name);
 }
 
@@ -140,18 +163,6 @@ export function drawIcon(ctx, name, x, y, size, color, width = 1.8) {
     else ctx.stroke(p);
   }
   ctx.restore();
-}
-
-export function iconTexture(name, { size = 256, color = '#ffffff', width = 2 } = {}) {
-  const c = makeCanvas(size, size);
-  const ctx = c.getContext('2d');
-  const pad = size * 0.14;
-  drawIcon(ctx, name, pad, pad, size - pad * 2, color, width);
-  return toTexture(c);
-}
-
-export function iconMaterial(name, opts) {
-  return new MeshBasicMaterial({ map: iconTexture(name, opts), transparent: true, depthWrite: false });
 }
 
 export function roundedRect(w, h, r, rb = r) {

@@ -1,6 +1,8 @@
 import {
   BoxGeometry,
   CircleGeometry,
+  SphereGeometry,
+  ClampToEdgeWrapping,
   Color,
   CylinderGeometry,
   Group,
@@ -25,8 +27,11 @@ import {
   easeOutBack,
   easeOutCubic,
   extrude,
+  finishMatcaps,
   isDarkTheme,
+  matcap,
   matcapMaterial,
+  preloadMatcaps,
   roundRectPath,
   roundedRect,
   toTexture,
@@ -189,42 +194,68 @@ const LOOP = 11.5;
 const px = (sx) => sx / 100 - SW / 200;
 const py = (sy) => SH / 200 - sy / 100;
 
+function glareTexture() {
+  const [c, ctx] = canvas2d(768, 256);
+  const g = ctx.createLinearGradient(384 - 150, 256, 384 + 150, 0);
+  g.addColorStop(0, 'rgba(255,255,255,0)');
+  g.addColorStop(0.42, 'rgba(255,255,255,0)');
+  g.addColorStop(0.5, 'rgba(255,255,255,0.9)');
+  g.addColorStop(0.56, 'rgba(255,255,255,0.25)');
+  g.addColorStop(0.64, 'rgba(255,255,255,0)');
+  g.addColorStop(1, 'rgba(255,255,255,0)');
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, 768, 256);
+  const tex = toTexture(c);
+  tex.wrapS = ClampToEdgeWrapping;
+  tex.wrapT = ClampToEdgeWrapping;
+  tex.repeat.set(1 / 3, 1);
+  tex.offset.set(1 / 3, 0);
+  return tex;
+}
+
 function lensGeo(r, depth, seg, x, y, z) {
   return new CylinderGeometry(r, r, depth, seg).rotateX(Math.PI / 2).translate(x, y, z);
 }
 
-function disc(r, seg, x, y, z) {
-  return new CircleGeometry(r, seg).rotateY(Math.PI).translate(x, y, z);
+function dome(r, h, seg, x, y, z) {
+  const R = (r * r + h * h) / (2 * h);
+  return new SphereGeometry(R, seg, Math.max(6, seg >> 2), 0, Math.PI * 2, 0, Math.asin(r / R))
+    .rotateX(-Math.PI / 2)
+    .translate(x, y, z + R - h);
 }
 
-function buildBack(q, phone) {
+function buildBack(q, phone, mats) {
   const seg = q.curve >= 10 ? 40 : 24;
-  const plateau = new Mesh(extrude(roundedRect(2.86, 1.44, 0.44, 0.22), { depth: 0.05, bevel: 0.03, segments: 2, curve: q.curve }), matcapMaterial('graphite'));
+  const plateau = new Mesh(extrude(roundedRect(2.86, 1.44, 0.44, 0.22), { depth: 0.05, bevel: 0.03, segments: 2, curve: q.curve }), mats.frame);
   plateau.position.set(0, 2.23, -0.185);
   phone.add(plateau);
 
   const Z = -0.24;
   const lenses = [[0.86, 2.58], [0.86, 1.88], [0.26, 2.23]];
-  phone.add(new Mesh(mergeGeometries(lenses.map(([x, y]) => lensGeo(0.31, 0.07, seg, x, y, Z - 0.03))), matcapMaterial('steel')));
+  phone.add(new Mesh(mergeGeometries(lenses.map(([x, y]) => lensGeo(0.31, 0.07, seg, x, y, Z - 0.03))), mats.ring));
   phone.add(new Mesh(mergeGeometries([
-    ...lenses.map(([x, y]) => lensGeo(0.24, 0.06, seg, x, y, Z - 0.042)),
-    lensGeo(0.12, 0.02, 24, -0.95, 1.92, Z - 0.012),
+    ...lenses.map(([x, y]) => lensGeo(0.25, 0.02, seg, x, y, Z - 0.062)),
+    dome(0.12, 0.035, 24, -0.95, 1.92, Z),
     lensGeo(0.028, 0.01, 10, -0.95, 2.25, Z - 0.004),
   ]), matcapMaterial('ink')));
-  phone.add(new Mesh(mergeGeometries(lenses.map(([x, y]) => disc(0.135, 28, x, y, Z - 0.074))), matcapMaterial('lens')));
+  phone.add(new Mesh(mergeGeometries(lenses.map(([x, y]) => dome(0.17, 0.06, seg, x, y, Z - 0.072))), matcapMaterial('lens')));
   const flash = new Mesh(new CircleGeometry(0.1, 20).rotateY(Math.PI), new MeshBasicMaterial({ color: 0xf3ead2 }));
   flash.position.set(-0.95, 2.56, Z - 0.003);
   phone.add(flash);
 
-  const panel = new Mesh(new ShapeGeometry(roundedRect(2.56, 4.1, 0.34), q.curve).rotateY(Math.PI), matcapMaterial('satin'));
+  const panel = new Mesh(new ShapeGeometry(roundedRect(2.56, 4.1, 0.34), q.curve).rotateY(Math.PI), mats.back);
   panel.position.set(0, -0.85, -0.163);
   phone.add(panel);
 }
 
 function buildPhone(q) {
   const phone = new Group();
-  const graphite = matcapMaterial('graphite');
-  const body = new Mesh(extrude(roundedRect(2.88, 5.96, 0.46), { depth: 0.2, bevel: 0.06, segments: 3, curve: q.curve + 4 }), graphite);
+  const mats = {
+    frame: matcapMaterial(`${q.finish}:frame`),
+    ring: matcapMaterial(`${q.finish}:ring`),
+    back: matcapMaterial(`${q.finish}:back`),
+  };
+  const body = new Mesh(extrude(roundedRect(2.88, 5.96, 0.46), { depth: 0.2, bevel: 0.06, segments: 4, curve: q.curve + 6 }), mats.frame);
   phone.add(body);
 
   const btns = [
@@ -234,8 +265,8 @@ function buildPhone(q) {
     new BoxGeometry(0.05, 0.4, 0.12).translate(-1.5, 1.55, 0),
     new BoxGeometry(0.05, 0.4, 0.12).translate(-1.5, 1.02, 0),
   ];
-  phone.add(new Mesh(mergeGeometries(btns), graphite));
-  buildBack(q, phone);
+  phone.add(new Mesh(mergeGeometries(btns), mats.frame));
+  buildBack(q, phone, mats);
 
   const glass = new Mesh(new ShapeGeometry(roundedRect(2.86, 5.94, 0.45), q.curve), new MeshBasicMaterial({ color: 0x030308 }));
   glass.position.z = 0.162;
@@ -248,6 +279,11 @@ function buildPhone(q) {
   const screen = new Mesh(screenGeo, new MeshBasicMaterial({ map: paintScreen(q.texScale) }));
   screen.position.z = Z_SCREEN;
   phone.add(screen);
+
+  const glare = new Mesh(screenGeo, new MeshBasicMaterial({ map: glareTexture(), transparent: true, depthWrite: false, opacity: 0.16 }));
+  glare.position.z = Z_SCREEN + 0.003;
+  glare.renderOrder = 2;
+  phone.add(glare);
 
   const island = new Mesh(new ShapeGeometry(roundedRect(0.6, 0.22, 0.11), 8), new MeshBasicMaterial({ color: 0x000000 }));
   island.position.set(0, py(21), Z_SCREEN + 0.004);
@@ -279,11 +315,12 @@ function buildPhone(q) {
   bars.visible = false;
   phone.add(bars);
 
-  return { phone, body, bubbles, voice, bars };
+  return { phone, body, bubbles, voice, bars, mats, glare };
 }
 
-export function createHero({ el, stage, tier }) {
+export function createHero({ el, stage, tier, finish }) {
   const q = {
+    finish,
     curve: tier >= 2 ? 10 : 6,
     texScale: tier >= 3 ? 2.5 : 2,
     particles: tier >= 3 ? 420 : tier === 2 ? 260 : 130,
@@ -295,7 +332,7 @@ export function createHero({ el, stage, tier }) {
 
   const rig = new Group();
   root.add(rig);
-  const { phone, body, bubbles, voice, bars } = buildPhone(q);
+  const { phone, body, bubbles, voice, bars, mats, glare } = buildPhone(q);
   rig.add(phone);
 
   const tiles = [
@@ -418,6 +455,18 @@ export function createHero({ el, stage, tier }) {
       stage.classList.add('gl-on');
     },
     onTheme: theme,
+    async setFinish(id) {
+      await preloadMatcaps(finishMatcaps(id));
+      mats.frame.matcap = matcap(`${id}:frame`);
+      mats.ring.matcap = matcap(`${id}:ring`);
+      mats.back.matcap = matcap(`${id}:back`);
+      if (st.flip < 0 && st.auto < 0 && !st.drag) {
+        st.auto = zone.time - 0.2;
+        st.autoAt = zone.time + 17;
+      }
+      zone.dirty = true;
+      zone.engine?.wake();
+    },
     resize(w, h) {
       camera.aspect = w / h;
       const tan = Math.tan((camera.fov * Math.PI) / 360);
@@ -468,6 +517,9 @@ export function createHero({ el, stage, tier }) {
       }
       st.flipNow = flip;
       rig.rotation.y = damp(rig.rotation.y, st.tx * 0.38 + sway * 0.1 + st.rotY + flip - (1 - ie) * 1.1, live ? 8 : 50, dt);
+      const spinY = ((rig.rotation.y % (Math.PI * 2)) + Math.PI * 3) % (Math.PI * 2) - Math.PI;
+      glare.material.map.offset.set(Math.min(2 / 3, Math.max(0, 1 / 3 - spinY * 0.3 - st.ty * 0.04)), 0);
+      glare.visible = Math.abs(spinY) < 1.7;
       rig.rotation.x = damp(rig.rotation.x, st.ty * 0.2, live ? 6 : 50, dt);
       rig.rotation.z = live ? Math.sin(t * 0.7 + 1) * 0.012 : 0;
       rig.position.y = live ? Math.sin(t * 0.7) * 0.12 : 0;
