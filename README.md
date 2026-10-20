@@ -2,7 +2,7 @@
 
 Лендинг RuinMessenger. 3D на three.js — модель iPhone 18 Pro: на первом экране с живым чатом и выбором цвета, в «Возможностях» — закреплённый телефон, экран которого меняется при прокрутке.
 
-Иконки — [Phosphor](https://phosphoricons.com), логотипы Huawei и VK — [Simple Icons](https://simpleicons.org); спрайт собирается из npm-пакетов при сборке (`vite.config.js`).
+Иконки — [Phosphor](https://phosphoricons.com), логотипы Huawei и VK — [Simple Icons](https://simpleicons.org), логотип Windows 11 — [Gil Barbara Logos](https://github.com/gilbarbara/logos) (CC0, через Iconify); спрайт собирается из npm-пакетов при сборке (`vite.config.js`).
 
 ## Команды
 

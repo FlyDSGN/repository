@@ -3,7 +3,6 @@ import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'vite';
 
 const PHOSPHOR = {
-  windows: ['fill', 'windows-logo'],
   android: ['fill', 'android-logo'],
   apple: ['fill', 'apple-logo'],
   telegram: ['fill', 'telegram-logo'],
@@ -24,6 +23,7 @@ const PHOSPHOR = {
   hand: ['regular', 'hand-swipe-right'],
 };
 const SIMPLE = { huawei: 'huawei', vk: 'vk' };
+const ICONIFY = { windows: ['logos', 'microsoft-windows-icon', 0.11] };
 
 const pkg = (p) => fileURLToPath(new URL(`./node_modules/${p}`, import.meta.url));
 
@@ -45,6 +45,15 @@ function iconSprite() {
   }
   for (const [id, name] of Object.entries(SIMPLE)) {
     out.push(symbol(id, readFileSync(pkg(`simple-icons/icons/${name}.svg`), 'utf8')));
+  }
+  for (const [id, [set, name, pad = 0]] of Object.entries(ICONIFY)) {
+    const data = JSON.parse(readFileSync(pkg(`@iconify-json/${set}/icons.json`), 'utf8'));
+    const icon = data.icons[name];
+    const w = icon.width || data.width || 16;
+    const h = icon.height || data.height || 16;
+    const body = icon.body.replace(/fill="#[0-9a-fA-F]{3,8}"/g, 'fill="currentColor"');
+    const p = w * pad;
+    out.push(symbol(id, `<svg viewBox="${-p} ${-p} ${w + 2 * p} ${h + 2 * p}">${body}</svg>`));
   }
   return out.join('');
 }
