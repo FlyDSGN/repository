@@ -29,7 +29,9 @@ const fail = (msg) => { report.errors.push(msg); console.log('FAIL', msg); };
 async function newPage(opts) {
   const ctx = await browser.newContext(opts);
   const page = await ctx.newPage();
-  page.on('console', (m) => { if (m.type() === 'error') fail(`console[${opts.name}]: ${m.text()}`); });
+  page.on('console', (m) => {
+    if (m.type() === 'error' || m.text().includes('[3d] disabled')) fail(`console[${opts.name}]: ${m.text()}`);
+  });
   page.on('pageerror', (e) => fail(`pageerror[${opts.name}]: ${e.message}`));
   return { ctx, page };
 }
@@ -44,6 +46,16 @@ async function scrollTo(page, sel, offset = 80) {
     window.scrollTo({ top: el.getBoundingClientRect().top + scrollY - o, behavior: 'instant' });
   }, [sel, offset]);
   await page.waitForTimeout(1400);
+}
+
+async function focusFeature(page, i) {
+  await page.evaluate((k) => {
+    const el = document.querySelector(`.feat[data-screen="${k}"]`);
+    const band = matchMedia('(max-width:959px)').matches ? 0.73 : 0.5;
+    const r = el.getBoundingClientRect();
+    window.scrollTo({ top: r.top + scrollY + r.height / 2 - innerHeight * band, behavior: 'instant' });
+  }, i);
+  await page.waitForTimeout(1600);
 }
 
 const VIEWS = [
@@ -70,15 +82,17 @@ if (!args.only || args.only === 'shots') {
     };
     await shot('1-hero');
     await scrollTo(page, '#download');
-    try { await wait3D(page, 'cards', 8000); } catch { fail(`${v.name}: 3D карточек не запустился`); }
-    await page.waitForTimeout(900);
-    await shot('2-platforms');
+    await shot('2-download');
     await scrollTo(page, '#features');
-    await shot('3-features');
-    await scrollTo(page, '#start');
-    try { await wait3D(page, 'cta', 8000); } catch { fail(`${v.name}: 3D финального блока не запустился`); }
+    try { await wait3D(page, 'showcase', 8000); } catch { fail(`${v.name}: 3D в «Возможностях» не запустился`); }
     await page.waitForTimeout(900);
-    await shot('4-cta');
+    await shot('3-features');
+    await focusFeature(page, 2);
+    const active = await page.evaluate(() => document.querySelector('.feat.is-active')?.dataset.screen);
+    if (active !== '2') fail(`${v.name}: активный пункт возможностей ${active}, ожидался 2`);
+    await shot('4-feature-call');
+    await scrollTo(page, '#faq');
+    await shot('5-faq');
     report[v.name] = await page.evaluate(() => ({ ...window.__rm3d, zones: window.__rm3d?.zones }));
     await ctx.close();
   }
@@ -130,8 +144,8 @@ async function perfRun(name, opts, rate) {
     await page.mouse.move(180, 400);
     for (let i = 0; i < 28; i++) { await page.mouse.wheel(0, 160); await page.waitForTimeout(120); }
   });
-  await measure('cards-idle', 4000);
-  await measure('cta-idle', 4000, async () => { await scrollTo(page, '#start'); });
+  await measure('features-idle', 4000, async () => { await focusFeature(page, 1); });
+  await measure('faq-idle', 4000, async () => { await scrollTo(page, '#faq'); });
   await measure('scroll-up', 6000, async () => {
     for (let i = 0; i < 30; i++) { await page.mouse.wheel(0, -220); await page.waitForTimeout(100); }
   });
@@ -177,9 +191,11 @@ if (!args.only || args.only === 'robust') {
     const theme = await page.evaluate(() => document.documentElement.dataset.theme);
     if (theme !== 'light') fail(`interact: тема не переключилась (${theme})`);
     await page.screenshot({ path: `${OUT}/interact-light.png` });
-    await page.locator('.feature').first().scrollIntoViewIfNeeded();
-    await page.locator('.feature').first().click();
-    await page.waitForTimeout(500);
+    await page.click('[data-finish="burgundy"]');
+    await page.waitForTimeout(2500);
+    const picked = await page.evaluate(() => [document.querySelector('[data-finish="burgundy"]').getAttribute('aria-checked'), document.getElementById('finish-name').textContent]);
+    if (picked[0] !== 'true' || picked[1] !== 'Burgundy') fail(`interact: цвет не переключился (${picked})`);
+    await page.screenshot({ path: `${OUT}/interact-burgundy.png` });
     await ctx.close();
   }
   {

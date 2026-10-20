@@ -26,8 +26,8 @@ function setupOS() {
     const label = cta.querySelector('[data-os-label]');
     if (label) label.textContent = targets[os].label;
   });
-  const card = doc.querySelector(`[data-os="${os}"]`);
-  if (card) card.classList.add('is-yours');
+  const row = doc.querySelector(`.dl[data-os="${os}"]`);
+  if (row) row.classList.add('is-yours');
 }
 
 function setupMenu() {
@@ -71,44 +71,6 @@ function setupTheme() {
   sync();
 }
 
-function setupScroll() {
-  const header = doc.getElementById('header');
-  const bar = doc.getElementById('progress');
-  let ticking = false;
-  let full = 0;
-  const measure = () => { full = doc.documentElement.scrollHeight - innerHeight; };
-  new ResizeObserver(measure).observe(doc.body);
-  measure();
-  const onScroll = () => {
-    const h = full;
-    const y = scrollY;
-    bar.style.setProperty('--p', h > 0 ? Math.min(1, y / h).toFixed(4) : 0);
-    header.classList.toggle('scrolled', y > 8);
-    ticking = false;
-  };
-  addEventListener('scroll', () => {
-    if (!ticking) { ticking = true; requestAnimationFrame(onScroll); }
-  }, { passive: true });
-  onScroll();
-}
-
-function setupRipple() {
-  if (reduce) return;
-  doc.addEventListener('pointerdown', (e) => {
-    const t = e.target.closest && e.target.closest('.btn,.icon-btn,.socials a');
-    if (!t || t.getAttribute('aria-disabled') === 'true') return;
-    const r = t.getBoundingClientRect();
-    const size = Math.max(r.width, r.height) * 2.4;
-    const s = doc.createElement('span');
-    s.className = 'ripple';
-    s.style.width = s.style.height = `${size}px`;
-    s.style.left = `${e.clientX - r.left}px`;
-    s.style.top = `${e.clientY - r.top}px`;
-    t.appendChild(s);
-    setTimeout(() => s.remove(), 700);
-  });
-}
-
 function setupFaq() {
   doc.querySelectorAll('.faq-item').forEach((d) => {
     const s = d.querySelector('summary');
@@ -131,26 +93,33 @@ function setupFaq() {
   });
 }
 
-function setupReveal() {
-  const els = doc.querySelectorAll('.reveal,.reveal-fade');
-  if (!('IntersectionObserver' in window)) { els.forEach((el) => el.classList.add('in')); return; }
-  const io = new IntersectionObserver((entries) => {
-    entries.forEach((en) => {
-      if (!en.isIntersecting) return;
-      en.target.classList.add('in');
-      en.target.dispatchEvent(new CustomEvent('rm-reveal', { bubbles: true }));
-      io.unobserve(en.target);
-    });
-  }, { threshold: 0.12, rootMargin: '0px 0px -5% 0px' });
-  els.forEach((el) => io.observe(el));
+function setupFeatures() {
+  const items = [...doc.querySelectorAll('.feat')];
+  if (!items.length || !('IntersectionObserver' in window)) return;
+  let current = 0;
+  const activate = (i) => {
+    if (i === current) return;
+    current = i;
+    items.forEach((el, k) => el.classList.toggle('is-active', k === i));
+    window.dispatchEvent(new CustomEvent('rm-screen', { detail: i }));
+  };
+  let io;
+  const observe = () => {
+    io?.disconnect();
+    const mobile = matchMedia('(max-width:959px)').matches;
+    io = new IntersectionObserver((entries) => {
+      for (const e of entries) if (e.isIntersecting) activate(items.indexOf(e.target));
+    }, { rootMargin: mobile ? '-70% 0px -24% 0px' : '-48% 0px -48% 0px' });
+    items.forEach((el) => io.observe(el));
+  };
+  observe();
+  matchMedia('(max-width:959px)').addEventListener('change', observe);
 }
 
 export function initUI() {
   setupOS();
   setupMenu();
   setupTheme();
-  setupScroll();
-  setupRipple();
   setupFaq();
-  setupReveal();
+  setupFeatures();
 }

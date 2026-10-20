@@ -1,5 +1,5 @@
 import '@fontsource-variable/onest';
-import '@fontsource-variable/unbounded';
+import '@fontsource-variable/jetbrains-mono';
 import './style.css';
 import { initUI } from './ui.js';
 

@@ -1,6 +1,4 @@
 import { WebGLRenderer } from 'three';
-import { isDarkTheme } from './assets.js';
-import { applyTheme } from './objects.js';
 
 const PIXEL_BUDGET = [1.4e6, 1.4e6, 2.2e6, 3e6];
 
@@ -145,7 +143,6 @@ export class Engine {
       else this.wake();
     });
     addEventListener('rm-theme', () => {
-      applyTheme(isDarkTheme());
       for (const z of this.zones) { z.onTheme?.(); z.dirty = true; }
       this.wake();
     });

@@ -1,9 +1,8 @@
-import { createCards } from './cards.js';
-import { createCta } from './cta.js';
+import { BASE_MATCAPS, FINISHES, finishMatcaps, preloadMatcaps } from './assets.js';
 import { detectTier, Engine } from './engine.js';
 import { createHero } from './hero.js';
-import { BASE_MATCAPS, FINISHES, finishMatcaps, isDarkTheme, preloadMatcaps } from './assets.js';
-import { applyTheme } from './objects.js';
+import { applyFinish } from './phone.js';
+import { createShowcase } from './showcase.js';
 
 function fontsReady() {
   if (!document.fonts) return Promise.resolve();
@@ -22,7 +21,7 @@ function savedFinish() {
   return FINISHES[0].id;
 }
 
-function setupPicker(hero, initial) {
+function setupPicker(onPick, initial) {
   const picker = document.getElementById('finish-picker');
   if (!picker) return;
   const name = document.getElementById('finish-name');
@@ -38,17 +37,16 @@ function setupPicker(hero, initial) {
     const id = b.dataset.finish;
     mark(id);
     try { localStorage.setItem('rm-finish', id); } catch {}
-    hero.setFinish(id);
+    onPick(id);
   });
 }
 
 export async function boot() {
   const heroEl = document.getElementById('gl-hero');
-  const cardsEl = document.getElementById('gl-cards');
-  const ctaEl = document.getElementById('gl-cta');
+  const showEl = document.getElementById('gl-showcase');
   if (!heroEl) return;
 
-  const engine = new Engine({ tier: detectTier(), max: 3 });
+  const engine = new Engine({ tier: detectTier(), max: 2 });
   engine.createSlot();
   const tier = engine.gov.tier;
   const finish = savedFinish();
@@ -65,9 +63,14 @@ export async function boot() {
     }, 400);
   };
   engine.add(hero);
-  setupPicker(hero, finish);
-  if (cardsEl) engine.add(createCards({ el: cardsEl, zoneEl: document.getElementById('zone-cards'), tier }));
-  if (ctaEl) engine.add(createCta({ el: ctaEl, stage: ctaEl.closest('.cta-stage'), tier }));
-  applyTheme(isDarkTheme());
+  const show = showEl ? createShowcase({ el: showEl, sticky: document.getElementById('feat-sticky'), tier, finish }) : null;
+  if (show) engine.add(show);
+
+  setupPicker(async (id) => {
+    await applyFinish(id);
+    hero.showBack();
+    if (show) show.dirty = true;
+    engine.wake();
+  }, finish);
   document.documentElement.dataset.gl = 'on';
 }
