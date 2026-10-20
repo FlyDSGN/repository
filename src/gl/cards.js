@@ -3,9 +3,8 @@ import { clamp01, damp, easeOutBack, easeOutCubic, warmScene } from './assets.js
 import { FEATURES, makeTile } from './objects.js';
 
 const PLATFORMS = new Set(['windows', 'android', 'huawei', 'ios']);
-const BLEED = 2.1; // вьюпорт слота больше самой иконки — чтобы вращение не обрезалось
+const BLEED = 2.1;
 
-// Положение элемента относительно контейнера по layout-координатам (без учёта transform).
 function offsetWithin(node, container) {
   let x = 0;
   let y = 0;
@@ -18,8 +17,6 @@ function offsetWithin(node, container) {
   return [x, y];
 }
 
-// Одна WebGL-канва поверх всей зоны карточек; каждая иконка рисуется в своём вьюпорте.
-// Канва лежит в потоке документа, поэтому при скролле 3D двигается вместе с карточками без рассинхрона.
 export function createCards({ el, zoneEl, tier }) {
   const q = { curve: tier >= 2 ? 8 : 5 };
   const camera = new PerspectiveCamera(28, 1, 1, 20);
@@ -92,7 +89,7 @@ export function createCards({ el, zoneEl, tier }) {
     priority: 2,
     time: 0,
     docTop: 0,
-    dprBoost: 1.5, // вьюпорты маленькие — можно рисовать чётче без потери скорости
+    dprBoost: 1.5,
     warmup: (r) => Promise.all(slots.map((s) => warmScene(r, s.scene, camera))),
     onReady() {
       el.classList.add('is-ready');
@@ -132,7 +129,6 @@ export function createCards({ el, zoneEl, tier }) {
     },
     render(renderer) {
       const H = zone.cssH;
-      // Полную очистку не делаем: без preserveDrawingBuffer браузер сам отдаёт чистый буфер на каждый кадр.
       renderer.autoClear = false;
       renderer.setScissorTest(true);
       const top = zone.docTop - scrollY;

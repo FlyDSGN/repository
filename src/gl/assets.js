@@ -10,7 +10,6 @@ import {
   SRGBColorSpace,
 } from 'three';
 
-// --- easing ---------------------------------------------------------------
 export const clamp01 = (v) => (v < 0 ? 0 : v > 1 ? 1 : v);
 export const easeOutCubic = (t) => 1 - (1 - t) ** 3;
 export const easeInOut = (t) => (t < 0.5 ? 4 * t * t * t : 1 - (-2 * t + 2) ** 3 / 2);
@@ -21,7 +20,6 @@ export const easeOutBack = (t) => {
 };
 export const damp = (cur, target, lambda, dt) => cur + (target - cur) * (1 - Math.exp(-lambda * dt));
 
-// --- canvas helpers --------------------------------------------------------
 function makeCanvas(w, h) {
   const c = document.createElement('canvas');
   c.width = w;
@@ -48,8 +46,6 @@ function norm(x, y, z) {
   return [x / l, y / l, z / l];
 }
 
-// Процедурный matcap: «студийный» свет запечён в маленькую текстуру.
-// Шейдер — одна выборка из текстуры, поэтому это самый дешёвый красивый материал для слабых GPU.
 export function makeMatcap({ base, rim = '#8f7bff', fill = '#3b82ff', spec = 1, shine = 48, ambient = 0.22, rimK = 0.55, size = 128 }) {
   const c = makeCanvas(size, size);
   const ctx = c.getContext('2d');
@@ -101,6 +97,9 @@ const PRESETS = {
   red: { base: '#ff3f62', rim: '#ffc7d2', fill: '#7a5cff', spec: 0.7, shine: 44 },
   silver: { base: '#b9c0d8', rim: '#ffffff', fill: '#7a5cff', spec: 0.8, shine: 50, ambient: 0.3 },
   amber: { base: '#ffb02e', rim: '#fff0c9', fill: '#ff5f8a', spec: 0.7, shine: 40 },
+  steel: { base: '#8a90a8', rim: '#ffffff', fill: '#7a5cff', spec: 1, shine: 70, ambient: 0.32 },
+  lens: { base: '#0c1238', rim: '#5d6dff', fill: '#b05cff', spec: 1, shine: 90, ambient: 0.3, rimK: 0.85 },
+  satin: { base: '#2c3150', rim: '#5a54a8', fill: '#4b6bff', spec: 0.35, shine: 18, ambient: 0.34, rimK: 0.25 },
   ink: { base: '#0b0c14', rim: '#3a3f60', fill: '#3b82ff', spec: 0.5, shine: 70, ambient: 0.4, rimK: 0.4 },
 };
 
@@ -113,7 +112,6 @@ export function matcapMaterial(name, extra = {}) {
   return new MeshMatcapMaterial({ matcap: matcap(name), ...extra });
 }
 
-// --- icons (Lucide paths, viewBox 24) ------------------------------------
 export const ICONS = {
   windows: { fill: true, d: ['M3 5.6 10.5 4.5v6.3H3z', 'M13 4.2 21 3v7.8h-8z', 'M3 13.2h7.5v6.3L3 18.4z', 'M13 13.2h8V21l-8-1.2z'] },
   android: { d: ['M5 14.5a7 7 0 0 1 14 0z', 'M7 16h10a2 2 0 0 1 2 2v1a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2v-1a2 2 0 0 1 2-2z', 'M9.5 11.5h.01M14.5 11.5h.01', 'M8.5 6.5 7 4.5M15.5 6.5 17 4.5'] },
@@ -156,20 +154,19 @@ export function iconMaterial(name, opts) {
   return new MeshBasicMaterial({ map: iconTexture(name, opts), transparent: true, depthWrite: false });
 }
 
-// --- shapes ---------------------------------------------------------------
-export function roundedRect(w, h, r) {
+export function roundedRect(w, h, r, rb = r) {
   const s = new Shape();
   const x = -w / 2;
   const y = -h / 2;
-  s.moveTo(x + r, y);
-  s.lineTo(x + w - r, y);
-  s.quadraticCurveTo(x + w, y, x + w, y + r);
+  s.moveTo(x + rb, y);
+  s.lineTo(x + w - rb, y);
+  s.quadraticCurveTo(x + w, y, x + w, y + rb);
   s.lineTo(x + w, y + h - r);
   s.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
   s.lineTo(x + r, y + h);
   s.quadraticCurveTo(x, y + h, x, y + h - r);
-  s.lineTo(x, y + r);
-  s.quadraticCurveTo(x, y, x + r, y);
+  s.lineTo(x, y + rb);
+  s.quadraticCurveTo(x, y, x + rb, y);
   return s;
 }
 
@@ -187,7 +184,6 @@ export function extrude(shape, { depth = 0.2, bevel = 0.05, segments = 3, curve 
   return g;
 }
 
-// Фирменный «пузырь» из логотипа: скруглённый прямоугольник с хвостиком.
 export function bubbleShape(w = 1.6, h = 1.2, r = 0.42) {
   const s = new Shape();
   const x = -w / 2;
@@ -206,7 +202,6 @@ export function bubbleShape(w = 1.6, h = 1.2, r = 0.42) {
 }
 
 export function planeGeometry() {
-  // Бумажный самолётик: 3 плоских треугольника, flat-shading, двусторонний.
   const N = [0.95, 0, 0];
   const LW = [-0.7, 0.05, -0.62];
   const RW = [-0.7, 0.05, 0.62];
@@ -256,7 +251,6 @@ export function roundRectPath(ctx, x, y, w, h, r) {
   ctx.closePath();
 }
 
-// Прогрев: шейдеры и текстуры зоны загружаются в рендерер заранее, а не на первом кадре.
 export async function warmScene(renderer, scene, camera) {
   scene.traverse((o) => {
     const m = o.material;
@@ -265,7 +259,6 @@ export async function warmScene(renderer, scene, camera) {
     if (m.matcap) renderer.initTexture(m.matcap);
   });
   await renderer.compileAsync(scene, camera);
-  // Один невидимый кадр в 1×1 пиксель: загружает в GPU геометрию, в том числе у скрытых пока объектов.
   const hidden = [];
   scene.traverse((o) => { if (!o.visible) { hidden.push(o); o.visible = true; } });
   const autoClear = renderer.autoClear;

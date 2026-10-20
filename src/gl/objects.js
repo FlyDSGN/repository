@@ -35,7 +35,6 @@ const once = (key, make) => {
   return cache.get(key);
 };
 
-// В светлой теме белые детали на белых карточках теряются — меняем их matcap на лавандовый.
 export function applyTheme(dark) {
   for (const key of ['m:white', 'planeMat']) {
     const m = cache.get(key);
@@ -55,7 +54,6 @@ const OS = {
   ios: { mc: 'silver', icon: '#262b44' },
 };
 
-// Плитка платформы: толстая скруглённая «клавиша» + иконка на лицевой грани.
 export function makeTile(os, q) {
   const cfg = OS[os];
   const g = new Group();
@@ -68,7 +66,6 @@ export function makeTile(os, q) {
   return g;
 }
 
-// Пузырь из логотипа + три точки «печатает…».
 export function makeBrandBubble(q, { color = 'violet', dots = true, mirror = false } = {}) {
   const g = new Group();
   const geo = once(`bubble${q.curve}`, () => extrude(bubbleShape(), { depth: 0.3, bevel: 0.08, segments: 3, curve: q.curve + 2 }));
@@ -103,7 +100,7 @@ export function makeBrandBubble(q, { color = 'violet', dots = true, mirror = fal
 export function makePaperPlane() {
   const geo = once('plane', () => {
     const p = planeGeometry();
-    p.rotateY(-Math.PI / 2); // нос смотрит в +Z, чтобы работал lookAt
+    p.rotateY(-Math.PI / 2);
     return p;
   });
   return new Mesh(geo, once('planeMat', planeMaterial));
@@ -137,7 +134,6 @@ export function makeRing(radius, segments = 160) {
   return new LineLoop(geo, new LineBasicMaterial({ transparent: true, opacity: 0.32, depthWrite: false }));
 }
 
-// --- 3D-иконки для карточек возможностей -------------------------------
 function boltShape() {
   const s = new Shape();
   s.moveTo(0.14, 0.66);

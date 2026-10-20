@@ -2,7 +2,6 @@ import { Color, Group, PerspectiveCamera, Scene } from 'three';
 import { clamp01, damp, easeOutBack, isDarkTheme, warmScene } from './assets.js';
 import { makeBrandBubble, makePaperPlane, makeParticles, makeRing, makeTile } from './objects.js';
 
-// Финальный блок: крупный фирменный пузырь, вокруг — плитки платформ и самолётик.
 export function createCta({ el, stage, tier }) {
   const q = { curve: tier >= 2 ? 10 : 6 };
   const scene = new Scene();
@@ -18,7 +17,6 @@ export function createCta({ el, stage, tier }) {
   back.position.set(1.3, 1.05, -1.2);
   root.add(back, main);
 
-  // плитки висят вокруг пузыря, не перекрывая его
   const tiles = [
     { os: 'windows', p: [-2.05, 1.0, -0.3], s: 0.56 },
     { os: 'android', p: [2.05, -0.75, 0.2], s: 0.52 },

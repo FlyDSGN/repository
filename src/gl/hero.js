@@ -1,6 +1,8 @@
 import {
   BoxGeometry,
+  CircleGeometry,
   Color,
+  CylinderGeometry,
   Group,
   InstancedMesh,
   Mesh,
@@ -19,6 +21,7 @@ import {
   clamp01,
   damp,
   drawIcon,
+  easeInOut,
   easeOutBack,
   easeOutCubic,
   extrude,
@@ -32,11 +35,10 @@ import {
 import { makeBrandBubble, makePaperPlane, makeParticles, makeRing, makeTile } from './objects.js';
 
 const FONT = '"Onest Variable", system-ui, sans-serif';
-const SW = 272; // экран телефона в CSS-пикселях; 1 единица сцены = 100 px
+const SW = 272;
 const SH = 580;
 const Z_SCREEN = 0.168;
 
-// ---------- текстуры экрана ----------
 function paintScreen(scale) {
   const [c, ctx] = canvas2d(SW * scale, SH * scale);
   ctx.scale(scale, scale);
@@ -187,6 +189,38 @@ const LOOP = 11.5;
 const px = (sx) => sx / 100 - SW / 200;
 const py = (sy) => SH / 200 - sy / 100;
 
+function lensGeo(r, depth, seg, x, y, z) {
+  return new CylinderGeometry(r, r, depth, seg).rotateX(Math.PI / 2).translate(x, y, z);
+}
+
+function disc(r, seg, x, y, z) {
+  return new CircleGeometry(r, seg).rotateY(Math.PI).translate(x, y, z);
+}
+
+function buildBack(q, phone) {
+  const seg = q.curve >= 10 ? 40 : 24;
+  const plateau = new Mesh(extrude(roundedRect(2.86, 1.44, 0.44, 0.22), { depth: 0.05, bevel: 0.03, segments: 2, curve: q.curve }), matcapMaterial('graphite'));
+  plateau.position.set(0, 2.23, -0.185);
+  phone.add(plateau);
+
+  const Z = -0.24;
+  const lenses = [[0.86, 2.58], [0.86, 1.88], [0.26, 2.23]];
+  phone.add(new Mesh(mergeGeometries(lenses.map(([x, y]) => lensGeo(0.31, 0.07, seg, x, y, Z - 0.03))), matcapMaterial('steel')));
+  phone.add(new Mesh(mergeGeometries([
+    ...lenses.map(([x, y]) => lensGeo(0.24, 0.06, seg, x, y, Z - 0.042)),
+    lensGeo(0.12, 0.02, 24, -0.95, 1.92, Z - 0.012),
+    lensGeo(0.028, 0.01, 10, -0.95, 2.25, Z - 0.004),
+  ]), matcapMaterial('ink')));
+  phone.add(new Mesh(mergeGeometries(lenses.map(([x, y]) => disc(0.135, 28, x, y, Z - 0.074))), matcapMaterial('lens')));
+  const flash = new Mesh(new CircleGeometry(0.1, 20).rotateY(Math.PI), new MeshBasicMaterial({ color: 0xf3ead2 }));
+  flash.position.set(-0.95, 2.56, Z - 0.003);
+  phone.add(flash);
+
+  const panel = new Mesh(new ShapeGeometry(roundedRect(2.56, 4.1, 0.34), q.curve).rotateY(Math.PI), matcapMaterial('satin'));
+  panel.position.set(0, -0.85, -0.163);
+  phone.add(panel);
+}
+
 function buildPhone(q) {
   const phone = new Group();
   const graphite = matcapMaterial('graphite');
@@ -194,11 +228,14 @@ function buildPhone(q) {
   phone.add(body);
 
   const btns = [
-    new BoxGeometry(0.05, 0.62, 0.12).translate(1.5, 1.25, 0),
-    new BoxGeometry(0.05, 0.42, 0.12).translate(-1.5, 1.7, 0),
-    new BoxGeometry(0.05, 0.42, 0.12).translate(-1.5, 1.15, 0),
+    new BoxGeometry(0.05, 0.62, 0.12).translate(1.5, 1.35, 0),
+    new BoxGeometry(0.04, 0.42, 0.1).translate(1.5, -0.45, 0),
+    new BoxGeometry(0.05, 0.26, 0.12).translate(-1.5, 2.1, 0),
+    new BoxGeometry(0.05, 0.4, 0.12).translate(-1.5, 1.55, 0),
+    new BoxGeometry(0.05, 0.4, 0.12).translate(-1.5, 1.02, 0),
   ];
   phone.add(new Mesh(mergeGeometries(btns), graphite));
+  buildBack(q, phone);
 
   const glass = new Mesh(new ShapeGeometry(roundedRect(2.86, 5.94, 0.45), q.curve), new MeshBasicMaterial({ color: 0x030308 }));
   glass.position.z = 0.162;
@@ -212,11 +249,13 @@ function buildPhone(q) {
   screen.position.z = Z_SCREEN;
   phone.add(screen);
 
-  const island = new Mesh(new ShapeGeometry(roundedRect(0.84, 0.24, 0.12), 6), new MeshBasicMaterial({ color: 0x000000 }));
-  island.position.set(0, py(22), Z_SCREEN + 0.004);
+  const island = new Mesh(new ShapeGeometry(roundedRect(0.6, 0.22, 0.11), 8), new MeshBasicMaterial({ color: 0x000000 }));
+  island.position.set(0, py(21), Z_SCREEN + 0.004);
   phone.add(island);
+  const selfie = new Mesh(new CircleGeometry(0.042, 16), new MeshBasicMaterial({ color: 0x141c44 }));
+  selfie.position.set(0.19, py(21), Z_SCREEN + 0.007);
+  phone.add(selfie);
 
-  // пузырьки — отдельные плоскости, «парят» над стеклом
   const bubbles = [];
   let y = 143;
   const bubbleGeo = new PlaneGeometry(1, 1);
@@ -234,7 +273,6 @@ function buildPhone(q) {
     y += h + 8;
   }
 
-  // эквалайзер голосового: 14 столбиков одним draw call
   const voice = bubbles.find((b) => b.voice);
   const bars = new InstancedMesh(new BoxGeometry(0.03, 1, 0.02), new MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0 }), WAVE.length);
   bars.renderOrder = 4;
@@ -301,11 +339,10 @@ export function createHero({ el, stage, tier }) {
   };
   theme();
 
-  // ---------- ввод ----------
   const st = {
-    tx: 0, ty: 0, // наклон от курсора
+    tx: 0, ty: 0,
     drag: false, dragX: 0, dragAt: 0, downX: 0, downY: 0, downT: 0,
-    rotY: 0, vel: 0, flip: -1, intro: -1,
+    rotY: 0, vel: 0, flip: -1, intro: -1, auto: -1, autoAt: 0, touchAt: -1e9, flipNow: 0,
   };
   const hero = stage.closest('section') || stage;
   hero.addEventListener('pointermove', (e) => {
@@ -323,6 +360,13 @@ export function createHero({ el, stage, tier }) {
     st.dragX = st.downX = e.clientX;
     st.downY = e.clientY;
     st.downT = performance.now();
+    st.touchAt = st.downT / 1000;
+    if (st.auto >= 0 || st.flip >= 0) {
+      st.rotY += st.flipNow;
+      st.flipNow = 0;
+      st.auto = -1;
+      st.flip = -1;
+    }
     st.vel = 0;
     stage.classList.add('touched');
     el.setPointerCapture?.(e.pointerId);
@@ -376,7 +420,6 @@ export function createHero({ el, stage, tier }) {
     onTheme: theme,
     resize(w, h) {
       camera.aspect = w / h;
-      // вписываем композицию и по высоте, и по ширине
       const tan = Math.tan((camera.fov * Math.PI) / 360);
       const needH = 7.2;
       const needW = 5.9;
@@ -394,7 +437,6 @@ export function createHero({ el, stage, tier }) {
       const it = live ? clamp01((t - st.intro) / 1.6) : 1;
       const ie = easeOutCubic(it);
 
-      // телефон: появление + idle-покачивание + курсор + свайп + скролл
       const scroll = live ? clamp01(scrollY / heroH) : 0;
       root.position.y = -2.4 * (1 - ie) + scroll * 1.2;
       root.rotation.x = scroll * 0.35;
@@ -407,18 +449,29 @@ export function createHero({ el, stage, tier }) {
           st.rotY = damp(st.rotY, home, 2.2, dt);
         }
       }
+      const T = Math.PI * 2;
+      if (live && st.flip < 0 && st.auto < 0 && !st.drag && t - st.intro > 7 && t - st.touchAt > 6 && t >= st.autoAt) {
+        st.auto = t;
+        st.autoAt = t + 17;
+      }
       let flip = 0;
       if (st.flip >= 0) {
         const p = clamp01((zone.time - st.flip) / 1.1);
-        flip = easeOutCubic(p) * Math.PI * 2;
-        if (p >= 1) st.flip = -1;
+        flip = easeOutCubic(p) * T;
+        if (p >= 1) { st.flip = -1; st.rotY += T; flip = 0; }
+      } else if (st.auto >= 0) {
+        const k = t - st.auto;
+        if (k < 1.4) flip = easeInOut(k / 1.4) * Math.PI;
+        else if (k < 3.4) flip = Math.PI;
+        else if (k < 4.8) flip = Math.PI + easeInOut((k - 3.4) / 1.4) * Math.PI;
+        else { st.auto = -1; st.rotY += T; flip = 0; }
       }
+      st.flipNow = flip;
       rig.rotation.y = damp(rig.rotation.y, st.tx * 0.38 + sway * 0.1 + st.rotY + flip - (1 - ie) * 1.1, live ? 8 : 50, dt);
       rig.rotation.x = damp(rig.rotation.x, st.ty * 0.2, live ? 6 : 50, dt);
       rig.rotation.z = live ? Math.sin(t * 0.7 + 1) * 0.012 : 0;
       rig.position.y = live ? Math.sin(t * 0.7) * 0.12 : 0;
 
-      // плитки платформ
       for (const tl of tiles) {
         const pop = live ? easeOutBack(clamp01((t - st.intro - 0.5 - tl.k * 0.12) / 0.7)) : 1;
         const [x, y, z] = tl.p;
@@ -435,7 +488,6 @@ export function createHero({ el, stage, tier }) {
         tl.g.rotation.x = Math.sin(t * 0.8 + tl.k) * 0.14;
       }
 
-      // фирменные пузыри
       const bpop = live ? easeOutBack(clamp01((t - st.intro - 0.9) / 0.8)) : 1;
       let pop = 0;
       if (bubbleA.userData.pop >= 0) {
@@ -451,7 +503,6 @@ export function createHero({ el, stage, tier }) {
       bubbleB.rotation.set(Math.sin(t * 0.7 + 2) * 0.15, 0.4 + Math.sin(t * 0.45 + 1) * 0.3 + st.tx * 0.2, -0.05);
       bubbleB.position.y = -2.9 + Math.sin(t * 0.8 + 2) * 0.1;
 
-      // самолётик по орбите
       const a = t * 0.42;
       const R = 3.25;
       plane.position.set(Math.cos(a) * R, Math.sin(a * 2) * 0.18, Math.sin(a) * R);
@@ -465,7 +516,6 @@ export function createHero({ el, stage, tier }) {
       dust.rotation.y = t * 0.03;
       dust.position.x = -st.tx * 0.25;
 
-      // чат: пузырьки «приземляются» на экран по очереди
       const ct = live ? (t - st.intro) % LOOP : 6;
       const out = live ? clamp01((ct - (LOOP - 1.1)) / 0.5) : 0;
       bubbles.forEach((b, i) => {

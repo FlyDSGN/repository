@@ -5,7 +5,6 @@ import { initUI } from './ui.js';
 
 initUI();
 
-// 3D грузим после первой отрисовки, чтобы страница была интерактивной сразу.
 function start3D() {
   const saveData = navigator.connection && navigator.connection.saveData;
   if (saveData || new URLSearchParams(location.search).has('no3d')) return;

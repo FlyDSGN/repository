@@ -2,9 +2,8 @@ import { WebGLRenderer } from 'three';
 import { isDarkTheme } from './assets.js';
 import { applyTheme } from './objects.js';
 
-const PIXEL_BUDGET = [1.4e6, 1.4e6, 2.2e6, 3e6]; // максимум пикселей буфера на одну канву по уровням
+const PIXEL_BUDGET = [1.4e6, 1.4e6, 2.2e6, 3e6];
 
-// Слабые/программные GPU: сразу понижаем качество, не дожидаясь замеров.
 const SOFTWARE_GPU = /swiftshader|llvmpipe|softpipe|software|basic render/i;
 const LOW_GPU = /swiftshader|llvmpipe|softpipe|software|basic render|mali-[2-4]\d\d|mali-t[6-8]|adreno \(tm\) [2-5]\d\d|powervr|intel.*(gma|hd graphics [2-5]\d{2,3}\b)/i;
 
@@ -17,14 +16,10 @@ export function detectTier() {
   return 2;
 }
 
-// Следит за реальной частотой кадров и понижает плотность пикселей / частоту рендера,
-// пока страница не станет плавной. Повышает обратно осторожно, с защитой от «качелей».
-// Решение принимается по доле медленных кадров за секунду, а не по среднему:
-// одиночный фриз (GC, загрузка картинки) не должен ронять качество.
 class Governor {
   constructor(tier) {
     this.setTier(tier);
-    this.div = tier <= 1 ? 2 : 1; // рисовать 3D каждый N-й кадр
+    this.div = tier <= 1 ? 2 : 1;
     this.scales = [1, 0.75, 0.6];
     this.level = 0;
     this.ema = 16.7;
@@ -42,7 +37,6 @@ class Governor {
     this.warmUntil = 0;
   }
 
-  // Компиляция шейдеров и загрузка текстур дают разовые фризы — их не считаем.
   warm(now, ms = 1500) {
     this.warmUntil = Math.max(this.warmUntil, now + ms);
   }
@@ -52,7 +46,6 @@ class Governor {
     const dpr = window.devicePixelRatio || 1;
     this.cap = tier >= 3 ? 2 : tier === 2 ? 1.5 : 1;
     this.base = Math.min(dpr, this.cap);
-    // MSAA на мобильных тайловых GPU почти бесплатный; выключаем только на высоком DPR и программном рендере.
     this.aa = !this.software && this.base < 2;
     if (tier <= 1) this.div = Math.max(this.div || 1, 2);
   }
@@ -68,7 +61,6 @@ class Governor {
     if (dt > 24) this.slowN++;
   }
 
-  // Окно со скроллом не учитываем: нагрузка временная, ронять из-за неё качество не нужно.
   skipWindow(now) {
     this.windowAt = now;
     this.n = this.sum = this.slowN = 0;
@@ -78,7 +70,6 @@ class Governor {
     this.cpu += (ms - this.cpu) * 0.15;
   }
 
-  // Раз в секунду решаем, менять ли качество. Возвращает true, если поменяли.
   evaluate(now) {
     if (!this.windowAt || now < this.warmUntil) { this.windowAt = now; this.n = this.sum = this.slowN = 0; return false; }
     if (now - this.windowAt < 1000 || this.n < 10) return false;
@@ -93,7 +84,6 @@ class Governor {
       if (now - this.lastUpAt < 5000 && ++this.fails >= 2) this.lockUntil = Infinity;
       this.lockUntil = Math.max(this.lockUntil, now + 6000);
       this.slowWindows = slowFrac > 0.7 ? this.slowWindows + 1 : 0;
-      // Сначала реже рисуем 3D (без пересоздания буферов), потом уменьшаем разрешение.
       if (this.div < 2) { this.div = 2; return true; }
       if (this.level < this.scales.length - 1) { this.level++; return true; }
       if (this.div < 3) { this.div = 3; return true; }
@@ -112,8 +102,6 @@ class Governor {
   }
 }
 
-// Пул WebGL-рендереров: по одному на зону (герой, карточки, финальный блок), не больше max.
-// Если контекстов не хватает, далеко разнесённые зоны по очереди используют один рендерер.
 export class Engine {
   constructor({ tier, max = 2 }) {
     this.gov = new Governor(tier);
@@ -197,7 +185,7 @@ export class Engine {
   makeRenderer() {
     const renderer = new WebGLRenderer({ antialias: this.gov.aa, alpha: true, stencil: false, powerPreference: 'default' });
     renderer.setClearColor(0x000000, 0);
-    renderer.debug.checkShaderErrors = false; // без синхронных getShaderInfoLog — они блокируют поток
+    renderer.debug.checkShaderErrors = false;
     return renderer;
   }
 
@@ -286,9 +274,6 @@ export class Engine {
     return true;
   }
 
-  // В простое заранее создаём второй контекст, компилируем шейдеры и грузим текстуры
-  // всех зон во все рендереры — чтобы при скролле не было фризов.
-  // Каждая зона получает свой рендерер заранее: при скролле ничего не создаётся и не пересоздаётся.
   async prewarm() {
     const idle = () => new Promise((r) => ('requestIdleCallback' in window ? requestIdleCallback(r, { timeout: 400 }) : setTimeout(r, 120)));
     for (const z of this.zones) {
@@ -310,8 +295,6 @@ export class Engine {
     this.warmed = true;
   }
 
-  // Новое качество: видимые зоны подхватят его на следующем кадре,
-  // невидимым пересоздаём буфер в простое — чтобы не платить за это при скролле.
   requality() {
     for (const z of this.zones) z.needsSize = true;
     const idle = window.requestIdleCallback || ((f) => setTimeout(f, 200));
@@ -346,7 +329,6 @@ export class Engine {
     this.last = now;
     this.gov.frame(dt);
     this.tick++;
-    // Во время скролла на слабых и средних устройствах 3D анимируется реже — прокрутка важнее.
     const scrolling = now - this.scrollAt < 250;
     const scrollDiv = this.gov.tier <= 1 ? 3 : this.gov.tier === 2 ? 2 : 1;
     const div = scrolling ? Math.max(scrollDiv, this.gov.div) : this.gov.div;

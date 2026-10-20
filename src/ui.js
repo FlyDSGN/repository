@@ -64,7 +64,7 @@ function setupTheme() {
   btn.addEventListener('click', () => {
     const next = current() === 'dark' ? 'light' : 'dark';
     root.setAttribute('data-theme', next);
-    try { localStorage.setItem('rm-theme', next); } catch { /* приватный режим */ }
+    try { localStorage.setItem('rm-theme', next); } catch {}
     sync();
   });
   mq.addEventListener('change', sync);

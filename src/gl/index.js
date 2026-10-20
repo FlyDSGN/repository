@@ -22,7 +22,7 @@ export async function boot() {
   await fontsReady();
 
   const engine = new Engine({ tier: detectTier(), max: 3 });
-  engine.createSlot(); // первый контекст сразу: по имени GPU уточняем уровень качества
+  engine.createSlot();
   const tier = engine.gov.tier;
   const hero = createHero({ el: heroEl, stage: document.getElementById('stage'), tier });
   const heroReady = hero.onReady;

@@ -1,6 +1,3 @@
-// Проверка сайта в Chromium: скриншоты (мобилка/десктоп, обе темы), ошибки консоли,
-// и замер плавности при замедлении CPU в 8 раз (как «слабый телефон» в DevTools).
-// Запуск: npm run build && node tests/run.mjs [--only=perf] [--url=http://...]
 import { spawn } from 'node:child_process';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { chromium } from '@playwright/test';
@@ -16,7 +13,7 @@ if (!base) {
   base = 'http://127.0.0.1:4173';
   server = spawn('npx', ['vite', 'preview', '--port', '4173', '--strictPort', '--host', '127.0.0.1'], { stdio: 'ignore' });
   for (let i = 0; i < 50; i++) {
-    try { if ((await fetch(base)).ok) break; } catch { /* ждём сервер */ }
+    try { if ((await fetch(base)).ok) break; } catch { }
     await new Promise((r) => setTimeout(r, 200));
   }
 }
@@ -87,7 +84,6 @@ if (!args.only || args.only === 'shots') {
   }
 }
 
-// Плавность: CPU x8 (CDP), мобильный вьюпорт, реальные события колеса для скролла.
 async function perfRun(name, opts, rate) {
   const { query, ...ctxOpts } = opts;
   const { ctx, page } = await newPage({ name, ...ctxOpts });
@@ -153,7 +149,6 @@ if (!args.only || args.only === 'perf') {
   }
 }
 
-// Надёжность: reduced motion, клики/свайп/смена темы, браузер без WebGL.
 if (!args.only || args.only === 'robust') {
   const mobile = { viewport: { width: 360, height: 780 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true, userAgent: ANDROID_UA, colorScheme: 'dark' };
   {
